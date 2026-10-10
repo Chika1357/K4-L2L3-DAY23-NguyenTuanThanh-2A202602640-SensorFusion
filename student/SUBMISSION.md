@@ -21,8 +21,12 @@
 **Khác biệt hai mode.** Hai mode có cùng `matches` = 502, `ghost_track_frames` = 0,
 `missed_gt_frames` = 239 và `mean_confirmed_tracks` = 2.5226. Đối chiếu từng dòng
 `grade_run.log` thì `confirmed`, `matches`, `ghosts`, `misses` của `lidar` và `fused`
-trùng nhau ở cả 199 frame. Vì vậy hai RMSE được tính trên **cùng 502 cặp track–GT**
-và so sánh được trực tiếp: camera không đổi tập track, chỉ đổi vị trí ước lượng.
+trùng nhau ở cả 199 frame. Vì vậy hai RMSE được tính trên **cùng số lượng 502 cặp
+ghép track–GT**, trong cùng segment, khoảng frame và seed. Log không lưu ID của
+từng cặp ghép, nên chưa thể khẳng định danh tính các cặp hoàn toàn giống nhau.
+Camera chỉ tinh chỉnh trạng thái EKF; code quy định score, khởi tạo và xoá track
+đều do lidar quyết định. Số lượng confirmed track, ghost và miss trong lần chạy
+này không thay đổi giữa hai mode.
 
 - `sum_sq_err` giảm từ 11.3437 xuống 9.2668 m² (−18.3%), RMSE giảm từ 0.1503 xuống
   0.1359 m (`rmse_fused − rmse_lidar` = −0.0145 m, đạt điều kiện ≤ 0.05 m).
@@ -40,7 +44,7 @@ và so sánh được trực tiếp: camera không đổi tập track, chỉ đ�
 **Giới hạn.** Đo camera là tâm hộp 2D ground-truth của FRONT cộng nhiễu Gauss
 (`run_lab.py` dùng `rng.normal(0, 0.5, 2)` pixel, trong khi EKF giả định
 `sigma_cam` = 5 pixel), không phải đầu ra của camera detector. Mức giảm RMSE ở trên
-chỉ cho thấy bước update camera được cài đúng và nhất quán với lidar; nó không
+cho thấy update camera cải thiện sai số tổng hợp trong lần chạy này; nó không
 chứng minh chất lượng của một hệ perception camera thật.
 
 Chạy từ root repo:
@@ -99,7 +103,9 @@ File per-mode `metrics_lidar.json`, `metrics_fused.json`, `grade_run_lidar.log`,
    khác, ở 195 frame bắt đầu từ frame 4 (frame đầu tiên có confirmed track). Ví dụ
    frame 150: cả hai mode `matches` = 3, `sum_sq_err` = 0.0761 (lidar) và 0.0327
    (fused). Nếu là fuse-then-track, dữ liệu hai cảm biến được gộp trước khi vào
-   tracker nên tập detection và số track sẽ khác nhau giữa hai mode.
+   tracker. Kiến trúc được xác định từ thứ tự xử lý trong code; các số đếm giống
+   nhau trong log là bằng chứng hỗ trợ, không đủ để tự kết luận kiến trúc hay
+   danh tính của từng track và cặp ghép GT.
 
 4. Nếu camera lệch calibration, triệu chứng gì trên innovation/residual?
 
@@ -156,9 +162,11 @@ Liệt kê phần bonus đã làm, file bằng chứng trong `student/bonus/` v�
 
 Ghi rõ, kể cả khi không dùng ("Không dùng AI"). Xem [RULES.md](../RULES.md) mục 2.
 
-- Công cụ đã dùng (ChatGPT, Copilot, Claude, …): Claude Code (Claude Opus)
-- Dùng cho phần nào (hàm, câu hỏi, debug): viết code toàn bộ các hàm Part E–H trong `kalman.py`, `camera_fusion.py`, `association.py`, `track_management.py`; cài môi trường và chạy `fusion-run-lab`; soạn bản nháp báo cáo này, gồm phần giải thích kết quả và 6 câu trả lời, dựa trên `metrics.json` và `grade_run.log` của lần chạy trong repo.
+- Công cụ đã dùng (ChatGPT, Copilot, Claude, …): Claude Code (Claude Opus); Codex
+- Dùng cho phần nào (hàm, câu hỏi, debug): Claude Code viết code toàn bộ các hàm Part E–H trong `kalman.py`, `camera_fusion.py`, `association.py`, `track_management.py`; cài môi trường và chạy `fusion-run-lab`; soạn bản nháp báo cáo này, gồm phần giải thích kết quả và 6 câu trả lời, dựa trên `metrics.json` và `grade_run.log` của lần chạy trong repo. Codex rà soát bài theo rubric, chạy lại test và kiểm tra tính nhất quán artifacts; chỉnh lập luận về số lượng cặp ghép track–GT, giới hạn của kết quả camera và bằng chứng về kiến trúc fusion; hỗ trợ commit và push bài.
 - Cách bạn đã kiểm tra lại (pytest, chạy Waymo, đối chiếu công thức): `pytest student/tests -q` báo 128 passed, không còn `failed`/`xfailed`; chạy `fusion-run-lab --fusion compare --seed 0` trên frame 0–198; đối chiếu từng số trong báo cáo với `metrics.json` và tính lại các số theo frame từ `grade_run.log`; chạy `python tools/check_submission.py`.
+
+  Khi rà soát bằng Codex trên Windows, chạy `.venv\Scripts\python.exe -X utf8 -m pytest student/tests -q` đạt 128 passed và `.venv\Scripts\python.exe -X utf8 tools/check_submission.py` báo sẵn sàng nộp ở bản đã commit. Codex kiểm tra lại artifacts hiện có, không chạy lại toàn segment Waymo.
 
 ## Checklist nộp
 
