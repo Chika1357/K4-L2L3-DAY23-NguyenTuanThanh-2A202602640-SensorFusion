@@ -11,9 +11,19 @@ from typing import Sequence
 
 import numpy as np
 
+from fusion_lab.workspace_support import get_tracking_params
+
 Matrix = np.matrix | np.ndarray
 
-# vi: from fusion_lab.workspace_support import get_tracking_params
+MIN_DEPTH = 1e-6
+
+
+def _to_sensor_frame(x: Matrix, sensor: Any) -> np.ndarray:
+    """Return the position part of state x in sensor axes (forward, left, up)."""
+    # vi: p_s = R @ p + t, với [R | t] lấy từ ma trận 4x4 veh_to_sens.
+    position = np.asarray(x, dtype=float).reshape(-1)[:3]
+    transform = np.asarray(sensor.veh_to_sens, dtype=float)
+    return transform[:3, :3] @ position + transform[:3, 3]
 
 
 def is_in_field_of_view(x: Matrix, sensor: Any) -> bool:
@@ -28,10 +38,17 @@ def is_in_field_of_view(x: Matrix, sensor: Any) -> bool:
         True if sensor coordinates are finite and the horizontal angle is within
         ``sensor.fov``. A camera additionally requires depth > 1e-6.
     """
-    # vi: TODO Part G — p_s = R @ p + t; loại tọa độ không hữu hạn.
-    # vi: Camera cần x_s > 1e-6; FOV từ nội tại và bề rộng ảnh.
-    # vi: Với cả lidar/camera: kiểm tra atan2(y_s, x_s) nằm trong sensor.fov.
-    raise NotImplementedError("TODO: implement is_in_field_of_view")
+    p_s = _to_sensor_frame(x, sensor)
+    if not np.isfinite(p_s).all():
+        return False
+    forward, left = p_s[0], p_s[1]
+    # vi: Camera không chiếu được điểm nằm sau hoặc ngay trên mặt phẳng ảnh.
+    if getattr(sensor, "name", None) == "camera" and forward <= MIN_DEPTH:
+        return False
+    # vi: Góc ngang so với trục nhìn; sensor.fov là (góc nhỏ nhất, góc lớn nhất).
+    angle = np.arctan2(left, forward)
+    lower, upper = sensor.fov
+    return bool(lower <= angle <= upper)
 
 
 def camera_measurement_prediction(x: Matrix, sensor: Any) -> Matrix:
@@ -48,10 +65,18 @@ def camera_measurement_prediction(x: Matrix, sensor: Any) -> Matrix:
         ValueError: With coordinate context if sensor coordinates are nonfinite
             or depth is at most 1e-6.
     """
-    # vi: TODO Part G — tính p_s = R @ p + t; trước phép chia kiểm tra hữu hạn
-    # vi: và x_s > 1e-6, ngược lại raise ValueError có tọa độ.
-    # vi: u = c_i - f_i * y_s/x_s; v = c_j - f_j * z_s/x_s.
-    raise NotImplementedError("TODO: implement camera_measurement_prediction")
+    p_s = _to_sensor_frame(x, sensor)
+    forward, left, up = p_s
+    # vi: Chặn trước phép chia — toạ độ không hữu hạn hoặc độ sâu không dương.
+    if not np.isfinite(p_s).all() or forward <= MIN_DEPTH:
+        raise ValueError(
+            "Camera projection needs finite coordinates and depth "
+            f"> {MIN_DEPTH:g}; sensor position={p_s.tolist()}"
+        )
+    # vi: Trục ảnh ngược chiều trục trái/lên của camera nên mang dấu trừ.
+    u = sensor.c_i - sensor.f_i * left / forward
+    v = sensor.c_j - sensor.f_j * up / forward
+    return np.asmatrix([[u], [v]])
 
 
 def build_camera_measurement(z: Sequence[float], sensor: Any) -> dict[str, Any]:
@@ -64,5 +89,8 @@ def build_camera_measurement(z: Sequence[float], sensor: Any) -> dict[str, Any]:
     Returns:
         Dict with keys ``z``, ``R``, ``sensor``.
     """
-    # vi: TODO Part G — z mat 2x1; R diag sigma_cam_i^2, sigma_cam_j^2 từ params.
-    raise NotImplementedError("TODO: implement build_camera_measurement")
+    params = get_tracking_params()
+    pixels = np.asarray(z, dtype=float).reshape(-1)[:2]
+    # vi: Nhiễu hai trục ảnh độc lập, đơn vị pixel.
+    R = np.asmatrix(np.diag([params.sigma_cam_i**2, params.sigma_cam_j**2]))
+    return {"z": np.asmatrix(pixels).T, "R": R, "sensor": sensor}
